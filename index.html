@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+  <!-- MapBoxGL lib and CSS-->
+  <script src="https://api.mapbox.com/mapbox-gl-js/v2.4.1/mapbox-gl.js"></script>
+  <link
+    href="https://api.mapbox.com/mapbox-gl-js/v2.4.1/mapbox-gl.css"
+    rel="stylesheet"
+  />
+
+  <head>
+    <meta charset="utf-8" />
+    <title>Travel Melbourne!</title>
+    <link href="style.css" rel="stylesheet" />
+  </head>
+
+  <body>
+    <!-- Dropdown menu block -->
+    <div class="selector">
+      <h2>Heading out, mate?</h2>
+      <select
+        name="purpose"
+        id="purpose"
+        class="selects"
+        onchange="toggleSelects(value)"
+      >
+        <!-- Top level menu -->
+        <option>What are you looking for?</option>
+        <option value="cuisines">"Just need a bite"</option>
+        <option value="theme">"Something more specific"</option>
+        <option value="transport">"How do I get there?"</option>
+        <option value="All">"Let me see it all"</option>
+      </select>
+      <!-- Cuisine selector -->
+      <select
+        name="Cuisines"
+        id="cuisines"
+        class="selects"
+        onchange="togglePopupGroup(value)"
+        style="visibility: hidden"
+      >
+        <option>"Some cuisine options"</option>
+      </select>
+
+      <!-- Category of points of interest selector -->
+      <select
+        name="Theme"
+        id="theme"
+        class="selects"
+        onchange="togglePopupTheme(value)"
+        style="visibility: hidden"
+      >
+        <option>"There's plenty to see"</option>
+      </select>
+    </div>
+
+    <!-- Map canvas -->
+    <div id="map" />
+
+    <!-- Transport selector -->
+    <div class="legend" id="transport" style="visibility: hidden">
+      <h2>Transportation options</h2>
+      <!-- Container for the legend items -->
+      <div class="legend-toggles-container" />
+    </div>
+  </body>
+
+  <!-- Data organized and loaded from csv sources, python used for convertion  -->
+  <script type="text/javascript" src="Cuisines/Asian.js"></script>
+  <script type="text/javascript" src="Cuisines/BBQ.js"></script>
+  <script type="text/javascript" src="Cuisines/Desserts.js"></script>
+  <script type="text/javascript" src="Cuisines/European.js"></script>
+  <script type="text/javascript" src="Cuisines/Fast food.js"></script>
+  <script type="text/javascript" src="Cuisines/Fine dining.js"></script>
+  <script type="text/javascript" src="Cuisines/French.js"></script>
+  <script type="text/javascript" src="Cuisines/Italian.js"></script>
+  <script type="text/javascript" src="Cuisines/Japanese.js"></script>
+  <script type="text/javascript" src="Cuisines/Outdoor.js"></script>
+  <script type="text/javascript" src="Cuisines/Spanish.js"></script>
+  <script type="text/javascript" src="Cuisines/Street food.js"></script>
+  <script type="text/javascript" src="Cuisines/Vegetarian.js"></script>
+  <script type="text/javascript" src="lms.js"></script>
+
+  <!-- Sets up toggle for the dropdown menus -->
+  <script>
+    selectors = [
+      document.getElementById("cuisines"),
+      document.getElementById("theme"),
+      document.getElementById("transport"),
+    ];
+
+    const toggleSelects = (s) => {
+      if (s === "All") {
+        for (let dd of selectors) {
+          dd.style.visibility = "visible";
+        }
+      } else {
+        for (let dd of selectors) {
+          dd.style.visibility = "hidden";
+        }
+        if (s in window) {
+          document.getElementById(s).style.visibility = "visible";
+        }
+      }
+    };
+  </script>
+
+  <script>
+    /*
+        Initialise MapBox connection and display container
+      */
+    mapboxgl.accessToken =
+      "pk.eyJ1IjoidGVzdHN1YmplY3Q4IiwiYSI6ImNrdGNjb284MzI0a2IyeGxhd2lsdzRuMnIifQ.KDXcve8h1bGQ7eTVZt9zuw";
+
+    let map = new mapboxgl.Map({
+      container: "map", // container ID
+      style: "mapbox://styles/testsubject8/cktlo55o90zib18qrewjc5ftv", // style URL
+      center: [144.94623, -37.81853], // starting position [lng, lat] - Centered to Melbourne - where all the data is present
+      zoom: 12, // starting zoom, nicely centers the city
+    });
+
+    /*
+        Logical grouping of the layers from MapBox - the groups are hidden and revealed together in the   toggleLayer function
+      */
+    const legendGroups = [
+      {
+        name: "Cycling lanes",
+        color: "#2d9aa6",
+        class: "line",
+        identifiers: ["bicycle-routes", "bike-share-dock-locations-8ltqm5"],
+        icon: "assets/bicycle.svg",
+        // cycle routes and share dock locations
+      },
+      {
+        name: "Tram network",
+        color: "#e0a52f",
+        class: "line",
+        identifiers: ["tram-tracks"],
+        icon: "assets/tram.svg",
+        // Tram lines and stops
+      },
+      {
+        name: "Bus Routes",
+        color: "#e07843",
+        class: "line",
+        identifiers: [
+          "datavic-ptv-metro-bus-route-3-c6696g",
+          "datavic-ptv-metro-bus-stop-35-9uj40i",
+        ],
+        icon: "assets/bus.svg",
+        // Bus routes and stops
+      },
+      {
+        name: "Accidents",
+        color: "#e80909",
+        class: "circle",
+        identifiers: ["road-crashes-for-five-years-c8ny21"],
+        icon: "assets/crash.svg",
+        // Faux heatmap of traffic accidents
+      },
+    ];
+
+    const legendTogglesContainer = document.querySelector(
+      ".legend-toggles-container"
+    ); // Referece to list of groups under Legend
+
+    /*
+        Create a button object for each group
+        Add an event listener that calls the toggleLayer function for the group
+      */
+    for (let group of legendGroups) {
+      const legendToggleBtn = document.createElement("button");
+      legendToggleBtn.className = "legend-toggle-btn";
+      legendToggleBtn.id = group.name.toLowerCase().split(" ").join("-");
+
+      // Add a label under the icon
+      const legendLabel = document.createElement("span");
+      legendLabel.className = "legend-label";
+      legendLabel.innerHTML = group.name;
+
+      const legendIcon = document.createElement("img");
+      legendIcon.className = "legend-icon";
+      legendIcon.src = group.icon;
+
+      // Set click behaviour for the button (icon and text)
+      legendToggleBtn.addEventListener("click", () => {
+        toggleLayer(legendIcon, group);
+      });
+
+      // Nest and arrange the elements under the Legend
+      legendToggleBtn.appendChild(legendIcon);
+      legendToggleBtn.appendChild(legendLabel);
+      legendTogglesContainer.appendChild(legendToggleBtn);
+    }
+
+    /*
+        Function to toggle layers of the MapBox display.
+        Sets the visibility on MapBoxs layers
+        Sets the icon colour on the Legend as an indicator for what is visible on the map canvas
+      */
+    const toggleLayer = (legendIcon, group) => {
+      if (
+        // If one element of the group is hidden, they all are hidden (on load all layers are hidden)
+        map.getLayoutProperty(group.identifiers[0], "visibility") === "none"
+      ) {
+        // make all layers of the group visible
+        group.identifiers.forEach((element) => {
+          map.setLayoutProperty(element, "visibility", "visible");
+        });
+
+        // Special case for tram tracks, to set the zoom level
+        // There is some inconsistency in how the polygons for the tracks are drawn, that makes them properly render only for zoom level >= 13
+        // Changing various configs in mapbox did not resolve this issue
+        if (group.name === "Tram network" && map.getZoom() < 13)
+          map.setZoom(13);
+
+        legendIcon.style.opacity = "100%";
+      } else {
+        // hide all layers of group
+        group.identifiers.forEach((element) => {
+          map.setLayoutProperty(element, "visibility", "none");
+        });
+        // remove all colouring and reduce opacity from legend icon
+        // legendIcon.style.filter = "";
+        legendIcon.style.opacity = "30%";
+      }
+    };
+  </script>
+
+  <script>
+    var cuisines = {
+      Asian: Asian,
+      BBQ: BBQ,
+      Desserts: Desserts,
+      European: European,
+      Fastfood: Fastfood,
+      Finedining: Finedining,
+      French: French,
+      Italian: Italian,
+      Japanese: Japanese,
+      Outdoor: Outdoor,
+      Spanish: Spanish,
+      Streetfood: Streetfood,
+      Vegetarian: Vegetarian,
+    };
+    c_mlist = {};
+    selector = document.getElementById("cuisines");
+
+    // On page load, process all data
+    for (var d in cuisines) {
+      // Each cuisine (each file)
+      dest = cuisines[d];
+
+      sel = document.createElement("option");
+      sel.text = d;
+      sel.value = d;
+      selector.add(sel); // Populate options in cuisine selector
+
+      mlist = [];
+
+      function col_interpolate(s, e, steps, count) {
+        // Red to green interpolation, based on rating / 5
+        // https://stackoverflow.com/a/11850486
+        final = s + ((e - s) / steps) * count;
+        return Math.floor(final).toString(16);
+      }
+
+      for (let d of dest) {
+        // Each entry in cuisine, each object in the js variable
+        var colr = col_interpolate(255, 0, 7, d.rating);
+        var colg = col_interpolate(0, 255, 7, d.rating);
+        col = "#".concat(colr).concat(colg).concat("00");
+        // #rgb for marker hue
+
+        // Google Maps link
+        let mlink = "http://www.google.com/maps/place/".concat(
+          d.lat,
+          ",",
+          d.long
+        );
+
+        // Popup content
+        phtml = "<a href=".concat(
+          mlink,
+          " target=",
+          "_blank",
+          "><h1>",
+          d.name,
+          "</h1></a><h2>",
+          d.feature,
+          "</h2><p style='text-align: center'><b>",
+          d.rating,
+          " / 5",
+          "</b></p>",
+          d.address
+        );
+
+        const marker = new mapboxgl.Marker({
+          // New marker for each data point in var
+          color: col,
+        })
+          .setLngLat([d.long, d.lat])
+          .setPopup(new mapboxgl.Popup().setHTML(phtml));
+        mlist.push(marker);
+      }
+      c_mlist[d] = mlist;
+    }
+
+    // One additional option to show all the cuisines
+    sel = document.createElement("option");
+    sel.text = "All";
+    sel.value = "All";
+    selector.add(sel);
+
+    const togglePopupGroup = (d) => {
+      // callback from dropdown selector
+      for (var c in cuisines) {
+        if (c === d || d === "All") {
+          for (let m of c_mlist[c]) {
+            m.addTo(map); // show marker if option value matches cuisine
+          }
+        } else {
+          for (let m of c_mlist[c]) {
+            m.remove(); // hide all other cuisines' markers
+          }
+        }
+      }
+    };
+  </script>
+
+  <script>
+    // THEMES for points of interest
+    var theme_cols = {};
+    var colors = [
+      // pleasant colour scheme for markers per category
+      "#89ab9e",
+      "#89abff",
+      "#68de0d",
+      "#e8c70e",
+      "#ebe9e1",
+      "#cfd916",
+      "#eb9263",
+      "#76b1de",
+      "#adb3a2",
+      "#68db37",
+      "#5067d9",
+      "#f54f07",
+      "#70543e",
+      "#cecdcb",
+      "#ebc51e",
+      "#eded2d",
+      "#970b99",
+      "#6d616d",
+    ];
+    var col_ind = 0;
+    var selected_theme = "All";
+    var t_mlist = {};
+
+    selector = document.getElementById("theme"); // dropdown #3 for categories
+
+    for (let l of lms) {
+      let theme = l.theme;
+      if (theme in t_mlist) {
+      } else {
+        // Create list of unique categories present in dataset
+        theme_cols[theme] = colors[col_ind];
+        col_ind += 1;
+        col_ind %= colors.length; // Assigns a new colour to each category
+        sel = document.createElement("option");
+        sel.text = theme;
+        sel.value = theme;
+        selector.add(sel); // Option is created and added to dropdown
+        t_mlist[theme] = [];
+      }
+
+      let len = l.coords.length; // coordinates are in a string, remove this after re-formatting from csv
+      let coords = l.coords.substr(1, len - 3).split(", ");
+      let lat = coords[0];
+      let long = coords[1];
+
+      let mlink = "http://www.google.com/maps/place/".concat(lat, ",", long); // Google Maps link
+      phtml = "<a href=".concat(
+        // Contents of popup
+        mlink,
+        " target=",
+        "_blank",
+        "><h2>",
+        l.name,
+        "</h2></a><h4>",
+        l.subtheme,
+        "</h5>"
+      );
+
+      const marker = new mapboxgl.Marker({ color: theme_cols[theme] }) // New marker for each datapoint
+        .setLngLat(coords.reverse())
+        .setPopup(new mapboxgl.Popup().setHTML(phtml));
+      t_mlist[theme].push(marker);
+    }
+    sel = document.createElement("option");
+    sel.text = "All";
+    sel.value = "All";
+    selector.add(sel); // Option to show all marks from all categories, added to end of list
+
+    const togglePopupTheme = (theme) => {
+      // Callback from selector for category
+      for (var t in t_mlist) {
+        // Check each category
+        if (t === theme || theme === "All") {
+          // if matches the value from selector
+          for (let m of t_mlist[t]) {
+            m.addTo(map); // Show all the marks of the category
+          }
+        } else {
+          for (let m of t_mlist[t]) {
+            m.remove(); // hide marks of all other categories
+          }
+        }
+      }
+    };
+  </script>
+</html>
